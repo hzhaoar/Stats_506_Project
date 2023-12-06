@@ -1,0 +1,11 @@
+---
+title: "Stats_506_Project"
+author: "Haoyu, Zhao"
+format: pdf
+editor: visual
+---
+
+```{r}
+data <- read.csv("./cbecs_csv.csv")
+```
+
