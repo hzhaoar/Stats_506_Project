@@ -5,7 +5,164 @@ format: pdf
 editor: visual
 ---
 
+## Load and clean data
+
 ```{r}
 data <- read.csv("./cbecs_csv.csv")
+data <- data[which(data$FLCEILHT != 995), ]
+data <- data[which(!data$NFLOOR %in% c(994, 995)), ]
+data <- data[which(data$PBA != 91), ]
+data$PBA <- as.factor(data$PBA)
+data$BLDSHP <- as.factor(data$BLDSHP)
+data$log_SQFT <- log(data$SQFT)
 ```
+
+## Transformation on SQFT
+
+```{r}
+model_1 <- lm(num_source~PBA+SQFT+BLDSHP+GLSSPC+NFLOOR+FLCEILHT+YRCONC, 
+              weights = FINALWT, data = data)
+summary(model_1)
+```
+
+
+```{r}
+model_2 <- lm(num_source~PBA+log_SQFT+BLDSHP+GLSSPC+NFLOOR+FLCEILHT+YRCONC, 
+              weights = FINALWT, data = data)
+summary(model_2)
+```
+
+
+```{r}
+par(mfrow = c(1,2))
+plot(model_1, which = 3, main = "Before transformation")
+plot(model_2, which = 3, main = "After transformation")
+```
+
+```{r}
+par(mfrow = c(1,2))
+plot(model_1$residuals~model_2$fitted.values, xlim = c(1,5),
+     ylab = "Residuals", xlab = "Fitted values", 
+     main = "Before transformation")
+plot(model_2$residuals~model_2$fitted.values, xlim = c(1,5),
+     ylab = "Residuals", xlab = "Fitted values",
+     main = "After transformation")
+```
+
+```{r}
+range(data$SQFT)
+range(data$num_source)
+```
+
+
+```{r}
+par(mfrow = c(1,2))
+plot(model_1, which = 5, main = "Before transformation")
+plot(model_2, which = 5, main = "After transformation")
+```
+
+## Check Multicollinearity
+
+```{r}
+library(car)
+library(ggplot2)
+```
+
+```{r}
+vifs <- vif(model_2)[, "GVIF^(1/(2*Df))"]
+vifs <- data.frame(Variable = names(vifs), GVIF = vifs)
+```
+
+```{r}
+ggplot(vifs, aes(x = Variable, y = GVIF)) +
+  geom_bar(stat = "identity", fill = "blue", alpha = 0.7, width = 0.5) +
+  geom_hline(yintercept = 1, linetype = "dashed", 
+             color = "red", linewidth = 0.5) +
+  labs(title = "GVIF Values for Predictor Variables", 
+       x = "Predictor Variables", y = "GVIF") +
+  theme_minimal() + 
+  scale_y_continuous(limits = c(0, 1.5)) +
+  scale_x_discrete(labels = c("Shape", "Height", "Glass", 
+                              "log(SQFT)",
+                              "Floors", "Activity", "Yr of Constr"))
+```
+
+## Varibable selection
+
+```{r}
+# Find significant PBA levels
+significant_variables <- list()
+for (i in unique(data$PBA)){
+  model_1 <- lm(num_source~log_SQFT+NFLOOR+FLCEILHT+YRCONC+BLDSHP+I(PBA == i), 
+              weights = FINALWT, data = data)
+  p <- dim(summary(model_1)$coefficients)[1]
+  if (summary(model_1)$coefficients[p, "Pr(>|t|)"] < 0.05) {
+    significant_variables <- c(significant_variables, i)
+  }
+}
+
+sort(as.numeric(unlist(significant_variables)))
+```
+
+
+```{r}
+model_3 <- lm(num_source~log_SQFT+NFLOOR+FLCEILHT+YRCONC+BLDSHP+
+                I(PBA == 1)+I(PBA == 2)+I(PBA == 5)+I(PBA == 7)+
+                I(PBA == 15)+I(PBA == 16)+I(PBA == 17)+I(PBA == 23)+I(PBA == 25),
+              weights = FINALWT, data = data)
+summary(model_3)
+```
+
+We can see BLDSHP is not significant.
+
+```{r}
+model_4 <- lm(num_source~log_SQFT+NFLOOR+FLCEILHT+YRCONC+
+                I(PBA == 1)+I(PBA == 2)+I(PBA == 5)+I(PBA == 7)+
+                I(PBA == 15)+I(PBA == 16)+I(PBA == 17)+I(PBA == 23)+I(PBA == 25),
+              weights = FINALWT, data = data)
+summary(model_4)
+```
+
+Now, we have done the variable selection.
+
+## Obtain the final model
+
+```{r}
+data$PBA_new <- as.numeric(as.character(data$PBA))
+data[!data$PBA %in% c(1, 2, 5, 7, 15, 16, 17, 23, 25), "PBA_new"] <- 0
+data$PBA_new <- as.factor(data$PBA_new)
+```
+
+```{r}
+model_5 <- lm(num_source~log_SQFT+NFLOOR+FLCEILHT+YRCONC+PBA_new,
+              weights = FINALWT, data = data)
+summary(model_5)
+```
+
+
+```{r}
+model_6 <- lm(num_source~log_SQFT*PBA_new+NFLOOR+FLCEILHT+YRCONC,
+              weights = FINALWT, data = data)
+summary(model_6)
+```
+
+## Figure out the interaction
+
+```{r}
+library(interactions)
+```
+
+```{r}
+interact_plot(model_5, pred = log_SQFT, 
+              modx = PBA_new, modx.values = as.factor(c(0,1,5,7)), 
+              y.label = "Number of Energy Source", x.label = "log(Square Footage)",
+              legend.main = "Principal building activity",
+              modx.labels = c("Others", "Vacant", "Nonrefrigerated warehouse", 
+                              "Public order and safety"))
+
+```
+
+
+
+
 
